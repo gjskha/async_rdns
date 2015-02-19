@@ -5,7 +5,7 @@ Look up rDNS asynchronously.
 
 *Usage*
 
-    $ async_rdns -i [interval] -m [ number of queries to run] -e [exception] [x.x.x.x y.y.y.y | x.x.x.x/yy]
+    $ async_rdns -i [interval] -m [ number of concurrent queries to run] [x.x.x.x y.y.y.y | x.x.x.x/yy]
 
 e.g.,
 
