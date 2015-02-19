@@ -20,7 +20,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <arpa/inet.h>
-#include <assert.h>
 #include <udns.h>
 
 #ifndef HAVE_UINT32_T
