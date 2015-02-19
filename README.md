@@ -5,7 +5,7 @@ Look up rDNS asynchronously.
 
 *Usage*
 
-    $ async_rdns -i [interval] -m [ number of queries to run] -e [exception] [x.x.x.x y.y.y.y | x.x.x.0/yy]
+    $ async_rdns -i [interval] -m [ number of queries to run] -e [exception] [x.x.x.x y.y.y.y | x.x.x.x/yy]
 
 e.g.,
 
@@ -13,5 +13,5 @@ e.g.,
     
 *Dependencies*
 
-You might have to install the UDNS development libraries first, available a package via yum and apt-get at least.
+You might have to install the UDNS development libraries first, available as a package via yum and apt-get at least.
 
