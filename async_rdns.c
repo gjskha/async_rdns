@@ -44,44 +44,56 @@ static void fill(int octet[4][256]);
 static int curq;
 
 static void dnscb(struct dns_ctx *ctx, struct dns_rr_ptr *rr, void *data) {
-int i;
---curq;
-if (rr) {
-for(i = 0; i < rr->dnsptr_nrr; ++i)
-printf("%s", rr->dnsptr_ptr[i]);
-/* putchar('\n'); */
-free(rr);
-}
-else
-/* fprintf(stderr, "%s\n", dns_strerror(dns_status(ctx))); */
-/* fprintf(stderr, "%d\n", dns_status(ctx)); */
-fprintf(stderr, "%d", dns_status(ctx));
 
-/*
-DNS_E_TEMPFAIL
+    int i;
+    char *err_msg;
+    --curq;
 
-temporary error, the resolver nameserver was not able to process our query or timed out.
+    if (rr) {
+        for(i = 0; i < rr->dnsptr_nrr; ++i)
+            printf("%s", rr->dnsptr_ptr[i]);
+        /* putchar('\n'); */
+        free(rr);
 
-DNS_E_PROTOCOL
+    } else {
 
-protocol error, a nameserver returned malformed reply.
+        /* fprintf(stderr, "%s\n", dns_strerror(dns_status(ctx))); */
+        /* fprintf(stderr, "%d\n", dns_status(ctx)); */
+        /* fprintf(stderr, "%d", dns_status(ctx)); */
 
-DNS_E_NXDOMAIN
+        switch(dns_status(ctx)) {
+        
+            /* ERROR: NOERROR */
+            case DNS_E_TEMPFAIL:
+                err_msg = "TEMPFAIL";
+                break;
 
-the domain name does not exist.
+            case DNS_E_PROTOCOL:
+                err_msg = "PROTOERR";
+                break;
+ 
+            case DNS_E_NXDOMAIN:
+                err_msg = "NXDOMAIN";
+                break;
+          
+            case DNS_E_NODATA:
+                err_msg = "NODATA";
+                break;
 
-DNS_E_NODATA
+            case DNS_E_NOMEM:
+                err_msg = "NOMEM";
+                break;
+ 
+            case DNS_E_BADQUERY:
+                err_msg = "BADQUERY";
+                break;
 
-there is no data of requested type found.
+            default:
+                err_msg = "NOERROR"; 
 
-DNS_E_NOMEM
-
-out of memory while processing request.
-
-DNS_E_BADQUERY
-
-*/
-
+        }
+            printf("%s", err_msg);
+    }     
 }
 
 int main(int argc, char **argv) {
@@ -183,30 +195,30 @@ int main(int argc, char **argv) {
     now = time(NULL);
     c = optind;
     
-    for(current = start; current <= end; current += increment) 
-    { if(!exception_flag || !except(&current, octet))
-    {
-    printf("%s\t", denumberize(current));
-         
-    union { struct in_addr a; void *p; } pa;
-    readable = denumberize(current);
-    if (dns_pton(AF_INET, readable, &pa.a) <= 0)
-    /* fprintf(stderr, "%s: invalid address\n", linebuf); */
-    fprintf(stderr, "%s: invalid address\n", readable);
-    else if (dns_submit_a4ptr(0, &pa.a, dnscb, pa.p) == 0)
-    fprintf(stderr, "%s: unable to submit query: %s\n",
-    current, dns_strerror(dns_status(0)));
-    else
-    ++curq;
-    
-    if (curq) {
-    c = dns_timeouts(0, -1, now);
-    c = poll(&pfd, 1, c < 0 ? -1 : c * 1000);
-    now = time(NULL);
-    if (c)
-    dns_ioevent(0, now);
-    }
-    }
+    for(current = start; current <= end; current += increment) { 
+        if(!exception_flag || !except(&current, octet)) {
+            
+            printf("%s\t", denumberize(current));
+                 
+            union { struct in_addr a; void *p; } pa;
+            readable = denumberize(current);
+            if (dns_pton(AF_INET, readable, &pa.a) <= 0)
+                /* fprintf(stderr, "%s: invalid address\n", linebuf); */
+                fprintf(stderr, "%s: invalid address\n", readable);
+            else if (dns_submit_a4ptr(0, &pa.a, dnscb, pa.p) == 0)
+                fprintf(stderr, "%s: unable to submit query: %s\n", current, dns_strerror(dns_status(0)));
+            else
+                ++curq;
+            
+            if (curq) {
+                c = dns_timeouts(0, -1, now);
+                c = poll(&pfd, 1, c < 0 ? -1 : c * 1000);
+                now = time(NULL);
+
+                if (c)
+                    dns_ioevent(0, now);
+            }
+        }
     }
     return 0;
 }
