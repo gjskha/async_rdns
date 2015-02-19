@@ -26,40 +26,35 @@
 #ifndef HAVE_UINT32_T
 #ifdef INT32_T
 typedef unsigned INT32_T uint32_t;
-#warning Using the Makefile-defined INT32_T as int
 #else
 typedef unsigned int uint32_t;
-#warning Just guessing, using unsigned int for uint32_t
 #endif
 #endif
 
 void usage(char *prog);
-int set_exceptions(char *exp, int octet[4][256]);
-int except(uint32_t *current, int octet[4][256]);
 uint32_t numberize(const char *addr);
 const char *denumberize(uint32_t addr);
 uint32_t add_offset(const char *addr, int offset);
-static void fill(int octet[4][256]);
+static const char *n2ip(const unsigned char *c);
 
 static int curq;
 
 static void dnscb(struct dns_ctx *ctx, struct dns_rr_ptr *rr, void *data) {
 
+    const char *ip = n2ip((unsigned char *)&data); 
+    
     int i;
     char *err_msg;
     --curq;
+    printf("%s\t", ip);
 
     if (rr) {
         for(i = 0; i < rr->dnsptr_nrr; ++i)
-            printf("%s", rr->dnsptr_ptr[i]);
+            printf("%s\n", rr->dnsptr_ptr[i]);
         /* putchar('\n'); */
         free(rr);
 
     } else {
-
-        /* fprintf(stderr, "%s\n", dns_strerror(dns_status(ctx))); */
-        /* fprintf(stderr, "%d\n", dns_status(ctx)); */
-        /* fprintf(stderr, "%d", dns_status(ctx)); */
 
         switch(dns_status(ctx)) {
         
@@ -92,7 +87,8 @@ static void dnscb(struct dns_ctx *ctx, struct dns_rr_ptr *rr, void *data) {
                 err_msg = "NOERROR"; 
 
         }
-            printf("%s", err_msg);
+        
+        printf("%s\n", err_msg);
     }     
 }
 
@@ -103,17 +99,16 @@ int main(int argc, char **argv) {
     int maxq = 10;
     struct pollfd pfd;
     uint32_t start = 0, end = 0, current;
-    int octet[4][256]; /* Holds all of the exceptions if -e is used */
     int increment = 1; /* Standard incrementer is one */
-    char *prefix, *offset, *readable;
-    int exception_flag = 0; /* If one, check for exclusions */
+    char *prefix, *offset; 
+    const char *readable;
     
     if (dns_init(NULL, 1) < 0) {
         fprintf(stderr, "unable to initialize dns library\n");
         return 1;
     }
     
-    while((c = getopt(argc, argv, "i:e:m:r")) != EOF) switch(c) {
+    while((c = getopt(argc, argv, "i:m:r")) != EOF) switch(c) {
 
         case 'm':
             maxq = atoi(optarg); 
@@ -130,12 +125,6 @@ int main(int argc, char **argv) {
                 exit(1);
             }
             break;
-        
-        case 'e':
-            set_exceptions(optarg, octet);
-            exception_flag = 1;
-            break;
-
         case '?':
             usage(argv[0]);
             exit(1);
@@ -188,142 +177,38 @@ int main(int argc, char **argv) {
         exit(1);
     }
     
-    /* printf("%d,%d", start, end); */
-    
     pfd.fd = dns_sock(0);
     pfd.events = POLLIN;
     now = time(NULL);
     c = optind;
     
     for(current = start; current <= end; current += increment) { 
-        if(!exception_flag || !except(&current, octet)) {
-            
-            printf("%s\t", denumberize(current));
-                 
-            union { struct in_addr a; void *p; } pa;
-            readable = denumberize(current);
-            if (dns_pton(AF_INET, readable, &pa.a) <= 0)
-                /* fprintf(stderr, "%s: invalid address\n", linebuf); */
-                fprintf(stderr, "%s: invalid address\n", readable);
-            else if (dns_submit_a4ptr(0, &pa.a, dnscb, pa.p) == 0)
-                fprintf(stderr, "%s: unable to submit query: %s\n", current, dns_strerror(dns_status(0)));
-            else
-                ++curq;
-            
-            if (curq) {
-                c = dns_timeouts(0, -1, now);
-                c = poll(&pfd, 1, c < 0 ? -1 : c * 1000);
-                now = time(NULL);
+        
+        union { struct in_addr a; void *p; } pa;
+        readable = denumberize(current);
+        /* printf("%s ", readable); */
 
-                if (c)
-                    dns_ioevent(0, now);
-            }
+        if (dns_pton(AF_INET, readable, &pa.a) <= 0)
+            fprintf(stderr, "%s: invalid address\n", readable);
+        else if (dns_submit_a4ptr(0, &pa.a, dnscb, pa.p) == 0)
+            fprintf(stderr, "%s: unable to submit query: %s\n", current, dns_strerror(dns_status(0)));
+        else
+            ++curq;
+        
+        if (curq) {
+            c = dns_timeouts(0, -1, now);
+            c = poll(&pfd, 1, c < 0 ? -1 : c * 1000);
+            now = time(NULL);
+
+            if (c)
+                dns_ioevent(0, now);
         }
     }
     return 0;
 }
 
 void usage(char *prog) {
-    fprintf(stderr, "usage: %s [options] <start end | CIDR block>\n-i <x>  set the increment to 'x'\n-e <x.x.x,x.x> e.g. -e ..4. will not print 192.168.4.[0-255]\n-m set max limit for queue \n\n", prog);
-}
-
-/*****************************************************************/
-/* This function parses the exception string and adds all of the */
-/* exceptions to the proper place in the exception table.  A '.' */
-/* is used to separate octets.  Numbers are separated by any non */
-/* digit other than the '.', which has special meaning.          */
-/*****************************************************************/
-int set_exceptions(char *exp, int octet[4][256])
-{
-size_t i;
-int excludeind = 0, bufferind = 0, octind = 0;
-char buffer[4];
-
-fill(octet);
-for(i = 0; i < strlen(exp) + 1; i++)
-{
-if( isdigit(exp[i]))
-{
-buffer[bufferind] = exp[i];
-bufferind++;
-assert(bufferind != 4); /* potential overflow... */
-}
-else
-{
-if(bufferind)
-{
-buffer[bufferind] = '\0';
-octet[octind][excludeind] = atoi(buffer);
-bufferind = 0;
-excludeind++; 
-}
-
-if(exp[i] == '.')
-{
-octind++;
-excludeind = 0;
-}
-}
-}
-return(0);
-}
-
-static void fill(int octet[4][256]) {
-
-    register int i, j;
- 
-    for(i = 0; i < 4; i++)
-        for(j = 0; j < 256; j++)
-            octet[i][j] = -1;
-}
-
-/*******************************************************************/
-/* Compares each octet against the list of exceptions for that     */
-/* octet.  If the octet is in the list of exceptions the 'current' */
-/* argument is incremented so that the 'current' variable is moved */
-/* up one octet.  I hope to God this makes sense... it's late. I'm */
-/* tired.                                                          */
-/*******************************************************************/
-int except(uint32_t *current, int octet[4][256])
-{
- register int i, j;
-
- for(i = 0; i < 4; i++)
- {
-  for(j = 0; j < 256; j++)
-  {
-   switch(i)
-   {
-   case 0:
-    if((int)((*current >> 24) & 0xff) == octet[i][j])
-    {
-     *current += (uint32_t)(1 << 24) -1;
-     return(1);
-    }
-    break;
-   case 1:
-    if((int)((*current >> 16) & 0xff) == octet[i][j])
-    {
-     *current += (uint32_t)(1 << 16) -1;
-     return(1);
-    }
-    break;
-   case 2:
-    if((int)((*current >> 8) & 0xff) == octet[i][j])
-    {
-        *current += (uint32_t)(1 << 8) -1; 
-                                    return(1);
-    }
-    break;
-   case 3:
-    if((int)(*current & 0xff) == octet[i][j])
-                                 return(1);
-    break;
-
-   }
-  }
- }
- return(0);
+    fprintf(stderr, "usage: %s [options] <start end | CIDR block>\n-i <x>  set the increment to 'x'\n-m set max limit for queue\n\n", prog);
 }
 
 /**********************************************/
@@ -352,15 +237,15 @@ uint32_t numberize(const char *addr) {
 /* ("%s%s",denumberize(x),denumberize(y)));   */
 /* because the return value is static.        */
 /**********************************************/
-const char *denumberize(uint32_t addr)
-{
-static char buffer[16]; /* length of ipv4 */
+const char *denumberize(uint32_t addr) {
 
-uint32_t addr_nl = htonl(addr);
+    static char buffer[16]; /* length of ipv4 */
+    uint32_t addr_nl = htonl(addr);
  
-if(!inet_ntop(AF_INET, &addr_nl, buffer, sizeof(buffer)))
-return NULL;
-return buffer;
+    if(!inet_ntop(AF_INET, &addr_nl, buffer, sizeof(buffer)))
+        return NULL;
+
+     return buffer;
 }
 
 /***********************************************/
@@ -371,21 +256,28 @@ return buffer;
 /* We then return last host address.           */
 /***********************************************/
 uint32_t add_offset(const char *addr, int offset) {
-uint32_t naddr;
+  
+    uint32_t naddr;
 
-if(offset > 32 || offset < 0)
-{
-fprintf(stderr, "CIDR offsets are between 0 and 32\n");
-exit(1);
+    if(offset > 32 || offset < 0) {
+        fprintf(stderr, "CIDR offsets are between 0 and 32\n");
+        exit(1);
+    }
+
+    naddr = numberize(addr);
+
+    if((naddr << offset) != 0) {
+        fprintf(stderr, "CIDR base address didn't start at subnet boundary\n");
+        exit(1);
+    }
+
+    return (uint32_t)(1 << (32 - offset)) + naddr -1;
+
 }
 
-naddr = numberize(addr);
-if((naddr << offset) != 0) 
-{
-fprintf(stderr, 
-"CIDR base address didn't start at subnet boundary\n");
-exit(1);
+static const char *n2ip(const unsigned char *c) {
+    static char b[sizeof("255.255.255.255")];
+    sprintf(b, "%u.%u.%u.%u", c[0], c[1], c[2], c[3]);
+    return b;
 }
 
-return (uint32_t)(1 << (32 - offset)) + naddr -1;
-}
