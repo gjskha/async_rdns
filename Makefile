@@ -1,9 +1,9 @@
 CC=gcc
-CFLAGS=-lfiredns -lfirestring
+CFLAGS=-ludns
 ILIB=/usr/include
 
 all: 
-	$(CC) -o firelookup rdns.c -I$(ILIB) $(CFLAGS)
+	$(CC) -o async_rdns async_rdns.c -I$(ILIB) $(CFLAGS)
 
 clean:
-	rm firelookup
+	rm async_rdns
