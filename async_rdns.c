@@ -1,25 +1,23 @@
 /* 
-   async_rdns: 
-   A tool for looking up the rDNS for IP address ranges and CIDR blocks
- 
-   Requires UDNS, a stub DNS resolver library allowing asynchronous lookups
-
-   A lot of code was borrowed from: 
-     ex-rdns.c - a file distributed with UDNS
-     prips - A tool for printing ranges of IP addresses 
-
-*/
+ *  async_rdns: 
+ *  A tool for looking up rDNS for IP address ranges and CIDR blocks asynchronously
+ *
+ *  Requires UDNS, a stub DNS resolver library.
+ *
+ *  Some code and/or algorithms borrowed from: 
+ *      ex-rdns.c - one of the files distributed with UDNS
+ *      prips - A tool for printing ranges of IP addresses 
+ *
+ */
 
 #include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
+#include <netinet/in.h> 
 #include <sys/poll.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <time.h>
 #include <stdlib.h>
 #include <string.h>
-#include <arpa/inet.h>
 #include <udns.h>
 
 #ifndef HAVE_UINT32_T
@@ -35,61 +33,9 @@ uint32_t numberize(const char *addr);
 const char *denumberize(uint32_t addr);
 uint32_t add_offset(const char *addr, int offset);
 static const char *n2ip(const unsigned char *c);
+static void dnscb(struct dns_ctx *ctx, struct dns_rr_ptr *rr, void *data);
 
 static int curq;
-
-static void dnscb(struct dns_ctx *ctx, struct dns_rr_ptr *rr, void *data) {
-
-    const char *ip = n2ip((unsigned char *)&data); 
-    
-    int i;
-    char *err_msg;
-    --curq;
-    printf("%s\t", ip);
-
-    if (rr) {
-        for(i = 0; i < rr->dnsptr_nrr; ++i)
-            printf("%s\n", rr->dnsptr_ptr[i]);
-        /* putchar('\n'); */
-        free(rr);
-
-    } else {
-
-        switch(dns_status(ctx)) {
-        
-            /* ERROR: NOERROR */
-            case DNS_E_TEMPFAIL:
-                err_msg = "TEMPFAIL";
-                break;
-
-            case DNS_E_PROTOCOL:
-                err_msg = "PROTOERR";
-                break;
- 
-            case DNS_E_NXDOMAIN:
-                err_msg = "NXDOMAIN";
-                break;
-          
-            case DNS_E_NODATA:
-                err_msg = "NODATA";
-                break;
-
-            case DNS_E_NOMEM:
-                err_msg = "NOMEM";
-                break;
- 
-            case DNS_E_BADQUERY:
-                err_msg = "BADQUERY";
-                break;
-
-            default:
-                err_msg = "NOERROR"; 
-
-        }
-        
-        printf("%s\n", err_msg);
-    }     
-}
 
 int main(int argc, char **argv) {
 
@@ -98,7 +44,7 @@ int main(int argc, char **argv) {
     int maxq = 10;
     struct pollfd pfd;
     uint32_t start = 0, end = 0, current;
-    int increment = 1; /* Standard incrementer is one */
+    int increment = 1; 
     char *prefix, *offset; 
     const char *readable;
     
@@ -114,8 +60,7 @@ int main(int argc, char **argv) {
             break;
 
         case 'r':
-            dns_set_opt(0, DNS_OPT_FLAGS,
-            dns_set_opt(0, DNS_OPT_FLAGS, -1) | DNS_NORD);
+            dns_set_opt(0, DNS_OPT_FLAGS, dns_set_opt(0, DNS_OPT_FLAGS, -1) | DNS_NORD);
             break;
 
         case 'i':
@@ -124,6 +69,7 @@ int main(int argc, char **argv) {
                 exit(1);
             }
             break;
+
         case '?':
             usage(argv[0]);
             exit(1);
@@ -179,14 +125,13 @@ int main(int argc, char **argv) {
     pfd.fd = dns_sock(0);
     pfd.events = POLLIN;
     now = time(NULL);
-    c = optind;
-    
+    //c = optind;
+    c = 0;
+
     for(current = start; current <= end; current += increment) { 
         
         union { struct in_addr a; void *p; } pa;
-        readable = denumberize(current);
-        /* printf("%s ", readable); */
-
+        readable = denumberize(current); 
         if (dns_pton(AF_INET, readable, &pa.a) <= 0)
             fprintf(stderr, "%s: invalid address\n", readable);
         else if (dns_submit_a4ptr(0, &pa.a, dnscb, pa.p) == 0)
@@ -200,14 +145,14 @@ int main(int argc, char **argv) {
             now = time(NULL);
 
             if (c)
-                dns_ioevent(0, now);
+               dns_ioevent(0, now);
         }
     }
     return 0;
 }
 
 void usage(char *prog) {
-    fprintf(stderr, "usage: %s [options] <start end | CIDR block>\n-i <x>  set the increment to 'x'\n-m set max limit for queue\n\n", prog);
+    fprintf(stderr, "usage: %s [options] <start end | CIDR block>\n-i <x>  set the increment to 'x'\n-m <y> set max limit for queue to 'y'\n\n", prog);
 }
 
 /**********************************************/
@@ -220,9 +165,8 @@ uint32_t numberize(const char *addr) {
     uint32_t sin_addr;
     int retval;
 
-    retval = inet_pton(AF_INET, addr, &sin_addr);
+    retval = dns_pton(AF_INET, addr, &sin_addr);
 
-    /* invalid address or error in inet_pton() */
     if(retval == 0 || retval == -1)
         return (uint32_t)-1; 
 
@@ -241,7 +185,7 @@ const char *denumberize(uint32_t addr) {
     static char buffer[16]; /* length of ipv4 */
     uint32_t addr_nl = htonl(addr);
  
-    if(!inet_ntop(AF_INET, &addr_nl, buffer, sizeof(buffer)))
+    if(!dns_ntop(AF_INET, &addr_nl, buffer, sizeof(buffer)))
         return NULL;
 
      return buffer;
@@ -274,9 +218,62 @@ uint32_t add_offset(const char *addr, int offset) {
 
 }
 
+static void dnscb(struct dns_ctx *ctx, struct dns_rr_ptr *rr, void *data) {
+    int j = 0;
+    const char addr;
+    
+    const char *ip = n2ip((unsigned char *)&data); 
+
+    int i;
+    char *err_msg;
+    --curq;
+    printf("%s\t", ip);
+
+    if (rr) {
+        for(i = 0; i < rr->dnsptr_nrr; ++i)
+            printf("%s\n", rr->dnsptr_ptr[i]);
+        free(rr);
+
+    } else {
+
+        switch(dns_status(ctx)) {
+        
+            /* ERROR: NOERROR */
+            case DNS_E_TEMPFAIL:
+                err_msg = "TEMPFAIL";
+                break;
+
+            case DNS_E_PROTOCOL:
+                err_msg = "PROTOERR";
+                break;
+ 
+            case DNS_E_NXDOMAIN:
+                err_msg = "NXDOMAIN";
+                break;
+          
+            case DNS_E_NODATA:
+                err_msg = "NODATA";
+                break;
+
+            case DNS_E_NOMEM:
+                err_msg = "NOMEM";
+                break;
+ 
+            case DNS_E_BADQUERY:
+                err_msg = "BADQUERY";
+                break;
+
+            default:
+                err_msg = "NOERROR"; 
+
+        }
+            printf("%s\n", err_msg);
+    }     
+}
+
+
 static const char *n2ip(const unsigned char *c) {
     static char b[sizeof("255.255.255.255")];
     sprintf(b, "%u.%u.%u.%u", c[0], c[1], c[2], c[3]);
     return b;
 }
-
