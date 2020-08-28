@@ -25,5 +25,9 @@ and so on.
 
 *Dependencies*
 
-You might have to install the UDNS development libraries first, available as a package via yum and apt-get at least.
+You might have to install the UDNS development libraries first, available as a package for Fedora as:
+
+    $ sudo dnf install udns-devel
+
+Something similar for Debian derived distributions.
 

@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-ludns
+CFLAGS=-ludns -g
 ILIB=/usr/include
 
 all: 

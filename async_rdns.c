@@ -22,32 +22,29 @@
 
 #ifndef HAVE_UINT32_T
 #ifdef INT32_T
-typedef unsigned INT32_T uint32_t;
+typedef unsigned INT32_T uint;
 #else
-typedef unsigned int uint32_t;
+typedef unsigned int uint;
 #endif
 #endif
 
 void usage(char *prog);
-uint32_t numberize(const char *addr);
-const char *denumberize(uint32_t addr);
-uint32_t add_offset(const char *addr, int offset);
-static const char *n2ip(const unsigned char *c);
+uint numberize(const char *addr);
+const char* denumberize(uint addr);
+uint add_offset(const char *addr, int offset);
 static void dnscb(struct dns_ctx *ctx, struct dns_rr_ptr *rr, void *data);
 
-static int curq;
+static uint curq;
 
 int main(int argc, char **argv) {
-
-    int c;
     time_t now;
-    int maxq = 10;
     struct pollfd pfd;
-    uint32_t start = 0, end = 0, current;
+    uint start = 0, end = 0, maxq = 10, c, current; 
     int increment = 1; 
     char *prefix, *offset; 
     const char *readable;
     
+
     if (dns_init(NULL, 1) < 0) {
         fprintf(stderr, "unable to initialize dns library\n");
         return 1;
@@ -64,7 +61,7 @@ int main(int argc, char **argv) {
             break;
 
         case 'i':
-            if((increment = atoi(optarg)) < 1) {
+            if ((increment = atoi(optarg)) < 1) {
                 fprintf(stderr, "%s: increment must be a positive integer\n", argv[0]);
                 exit(1);
             }
@@ -81,11 +78,11 @@ int main(int argc, char **argv) {
 
             prefix = strtok(argv[optind], "/");
               
-            if((offset = strtok(NULL, "/"))) {
+            if ((offset = strtok(NULL, "/"))) {
 
                 start = numberize(prefix);
 
-                if(start == (uint32_t)-1) {
+                if (start == (uint)-1) {
                     fprintf(stderr, "%s: bad IP address\n", argv[0]);
                     exit(1);
                 }
@@ -104,7 +101,7 @@ int main(int argc, char **argv) {
             start = numberize(argv[optind]);
             end = numberize(argv[optind+1]);
 
-            if(start == (uint32_t)-1 || end == (uint32_t)-1) {
+            if (start == (uint)-1 || end == (uint)-1) {
                 fprintf(stderr, "%s: bad IP address\n", argv[0]);
                 exit(1);
             }
@@ -125,16 +122,20 @@ int main(int argc, char **argv) {
     pfd.fd = dns_sock(0);
     pfd.events = POLLIN;
     now = time(NULL);
-    //c = optind;
     c = 0;
 
     for(current = start; current <= end; current += increment) { 
         
         union { struct in_addr a; void *p; } pa;
-        readable = denumberize(current); 
+	
+	readable = denumberize(current); 
+	
+                              // src    // destination	
         if (dns_pton(AF_INET, readable, &pa.a) <= 0)
             fprintf(stderr, "%s: invalid address\n", readable);
-        else if (dns_submit_a4ptr(0, &pa.a, dnscb, pa.p) == 0)
+        else 
+		
+	if (dns_submit_a4ptr(0, &pa.a, dnscb, pa.p) == 0)
             fprintf(stderr, "%s: unable to submit query: %s\n", current, dns_strerror(dns_status(0)));
         else
             ++curq;
@@ -151,8 +152,15 @@ int main(int argc, char **argv) {
     return 0;
 }
 
+/**********************************************/
+/* Turn an IP address in dotted decimal into  */ 
+/* a number.  This function also works  for   */
+/* partial addresses.                         */
+/**********************************************/
 void usage(char *prog) {
-    fprintf(stderr, "usage: %s [options] <start end | CIDR block>\n-i <x>  set the increment to 'x'\n-m <y> set max limit for queue to 'y'\n\n", prog);
+    fprintf(stderr, "usage: %s [options] <start end | CIDR block>\n", prog);
+    fprintf(stderr, "-i <x>  set the increment to 'x'\n");
+    fprintf(stderr, "-m <y> set max limit for queue to 'y'\n\n");
 }
 
 /**********************************************/
@@ -160,15 +168,16 @@ void usage(char *prog) {
 /* a number.  This function also works  for   */
 /* partial addresses.                         */
 /**********************************************/
-uint32_t numberize(const char *addr) {
+uint numberize(const char *addr) {
 
-    uint32_t sin_addr;
+    uint sin_addr;
     int retval;
 
+                               
     retval = dns_pton(AF_INET, addr, &sin_addr);
 
-    if(retval == 0 || retval == -1)
-        return (uint32_t)-1; 
+    if (retval == 0 || retval == -1)
+        return (uint)-1; 
 
     return ntohl(sin_addr); 
 }
@@ -180,15 +189,15 @@ uint32_t numberize(const char *addr) {
 /* ("%s%s",denumberize(x),denumberize(y)));   */
 /* because the return value is static.        */
 /**********************************************/
-const char *denumberize(uint32_t addr) {
+const char* denumberize(uint addr) {
 
     static char buffer[16]; /* length of ipv4 */
-    uint32_t addr_nl = htonl(addr);
- 
-    if(!dns_ntop(AF_INET, &addr_nl, buffer, sizeof(buffer)))
+    uint addr_nl = htonl(addr);
+
+    if (!dns_ntop(AF_INET, &addr_nl, buffer, sizeof(buffer)))
         return NULL;
 
-     return buffer;
+    return buffer;
 }
 
 /***********************************************/
@@ -198,9 +207,9 @@ const char *denumberize(uint32_t addr) {
 /* bits is the number of bits left for hosts.  */
 /* We then return last host address.           */
 /***********************************************/
-uint32_t add_offset(const char *addr, int offset) {
+uint add_offset(const char *addr, int offset) {
   
-    uint32_t naddr;
+    uint naddr;
 
     if(offset > 32 || offset < 0) {
         fprintf(stderr, "CIDR offsets are between 0 and 32\n");
@@ -214,23 +223,20 @@ uint32_t add_offset(const char *addr, int offset) {
         exit(1);
     }
 
-    return (uint32_t)(1 << (32 - offset)) + naddr -1;
+    return (uint)(1 << (32 - offset)) + naddr -1;
 
 }
 
 static void dnscb(struct dns_ctx *ctx, struct dns_rr_ptr *rr, void *data) {
-    int j = 0;
-    const char addr;
-    
-    const char *ip = n2ip((unsigned char *)&data); 
 
-    int i;
-    char *err_msg;
-    --curq;
+    const char *ip = denumberize(htonl((uint)data)); 
     printf("%s\t", ip);
 
+    char *err_msg;
+    --curq;
+
     if (rr) {
-        for(i = 0; i < rr->dnsptr_nrr; ++i)
+        for(int i = 0; i < rr->dnsptr_nrr; ++i)
             printf("%s\n", rr->dnsptr_ptr[i]);
         free(rr);
 
@@ -269,11 +275,4 @@ static void dnscb(struct dns_ctx *ctx, struct dns_rr_ptr *rr, void *data) {
         }
             printf("%s\n", err_msg);
     }     
-}
-
-
-static const char *n2ip(const unsigned char *c) {
-    static char b[sizeof("255.255.255.255")];
-    sprintf(b, "%u.%u.%u.%u", c[0], c[1], c[2], c[3]);
-    return b;
 }
